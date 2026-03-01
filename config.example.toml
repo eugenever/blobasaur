@@ -1,0 +1,121 @@
+# Example configuration for Blobasaur
+# Copy this file to config.toml and modify as needed
+
+# Directory where SQLite database files will be stored
+data_dir = "blob_data"
+
+# Number of shards to distribute data across
+# More shards = better concurrency but more file handles
+num_shards = 4
+
+# Server address and port (optional, defaults to 0.0.0.0:6379)
+addr = "0.0.0.0:6379"
+
+# Asynchronous write mode (optional, defaults to false)
+# When enabled, SET/HSET/DEL/HDEL operations return immediately after queueing
+# instead of waiting for database completion. This provides better response times
+# but operations may fail after the server responds (check logs).
+#
+# Race condition prevention: An inflight cache stores pending writes so that
+# GET/HGET requests return the correct data even before writes complete.
+async_write = true
+
+# Write batching configuration (optional)
+# batch_size: Maximum operations to batch in a single transaction (defaults to 1)
+# Higher values improve throughput but increase latency per operation
+batch_size = 50
+
+# batch_timeout_ms: Max time to wait for additional operations before processing batch
+# Only relevant when batch_size > 1 (defaults to 0)
+batch_timeout_ms = 10
+
+# Example configurations for different use cases:
+
+# High-throughput async setup:
+# async_write = true
+# batch_size = 100
+# batch_timeout_ms = 5
+
+# Low-latency consistent setup:
+# async_write = false
+# batch_size = 1
+
+# Balanced setup:
+# async_write = false
+# batch_size = 25
+# batch_timeout_ms = 10
+
+# Storage compression
+[storage_compression]
+enabled = true
+algorithm = "zstd" # Options: gzip, zstd, lz4, brotli
+level = 3
+
+# SQLite performance tuning (optional)
+# Based on: https://kerkour.com/sqlite-for-servers
+[sqlite]
+# Cache size across all shards in MB (default ≈ 100 MB per shard)
+# Tuning tip: cache_size_mb ≈ (Available RAM in GB * 0.7 * 1024)
+# Example: 16GB RAM dedicated at 70% → cache_size_mb ≈ 11468 (≈2867 MB per shard for 4 shards)
+cache_size_mb = 400
+
+# Maximum SQLite connections per shard (default: 10)
+# Increase for higher concurrency; remember total cache/mmap budgets are divided across shards * connections
+# max_connections = 10
+
+# Busy timeout in milliseconds (default: 5000 = 5 seconds)
+# Increase for high-contention workloads
+busy_timeout_ms = 5000
+
+# Synchronous mode (default: NORMAL)
+# OFF: Fastest, but risk of corruption on power loss (not recommended)
+# NORMAL: Recommended - good performance with corruption safety in WAL mode
+# FULL: Safest but slower, use for critical data
+synchronous = "NORMAL"
+
+# Auto-upgrade legacy shard DBs whose persisted PRAGMA auto_vacuum is not INCREMENTAL.
+# Default: true
+# If enabled, Blobasaur performs a one-time startup conversion with:
+#   PRAGMA wal_checkpoint(TRUNCATE);
+#   PRAGMA auto_vacuum=INCREMENTAL;
+#   VACUUM;
+# Startup fails fast if any shard upgrade fails.
+auto_upgrade_legacy_auto_vacuum = true
+
+# Max concurrent shard upgrades during startup legacy auto_vacuum conversion.
+# Default: 2 (good baseline for NVMe hosts).
+# Set to 1 for HDDs or very conservative rollout.
+auto_upgrade_legacy_auto_vacuum_concurrency = 2
+
+# Total memory-mapped I/O size in MB (default: 0 = disabled)
+# Only useful for databases larger than cache_size
+# Example: 3000 (≈3 GB total budget)
+# mmap_size = 0
+
+# Metrics configuration (optional)
+# Enable Prometheus-compatible metrics endpoint
+[metrics]
+enabled = true
+addr = "0.0.0.0:9090" # Address for metrics HTTP server
+
+[limiter]
+backup_days = 7
+
+# Redis Cluster configuration (optional)
+# Enables Redis cluster protocol with automatic node discovery and client redirection
+# [cluster]
+# enabled = true
+# node_id = "node1"                      # Unique identifier for this node
+# seeds = ["127.0.0.1:7002"]             # Other cluster nodes for gossip discovery
+# advertise_addr = "127.0.0.1:6379"      # Redis address advertised to clients
+# port = 7001                            # Gossip port for cluster communication (separate from Redis port)
+#
+# # Hash slot ranges owned by this node (0-16383 total)
+# [[cluster.slot_ranges]]
+# start = 0
+# end = 5460
+#
+# # For a 3-node cluster, you might configure:
+# # Node 1: slots 0-5460
+# # Node 2: slots 5461-10922
+# # Node 3: slots 10923-16383

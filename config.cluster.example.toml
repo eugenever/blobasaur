@@ -1,0 +1,91 @@
+# Blobasaur Cluster Configuration Example
+# Copy this file to config.toml and modify as needed
+
+# Basic server configuration
+data_dir = "data"
+num_shards = 4
+addr = "0.0.0.0:6379"
+
+# Optional performance tuning
+async_write = true
+batch_size = 100
+batch_timeout_ms = 10
+
+# Storage compression
+[storage_compression]
+enabled = true
+algorithm = "zstd" # Options: gzip, zstd, lz4, brotli
+level = 3
+
+# Cluster configuration
+[cluster]
+# Enable cluster mode
+enabled = true
+
+# Unique node identifier for this node
+# Must be unique across all nodes in the cluster
+node_id = "node1"
+
+# List of seed nodes to connect to when joining the cluster
+# Format: IP:gossip_port of existing cluster members (not itself)
+seeds = ["192.168.1.101:7000", "192.168.1.102:7000"]
+
+# Gossip port for cluster communication (UDP)
+# Must be different from Redis port and open in firewall
+port = 7000
+
+# Address advertised to clients for redirection (optional)
+# If not set, clients will use the connection address
+advertise_addr = "192.168.1.100:6379"
+
+# Hash slots assigned to this node
+# Redis cluster has 16384 total slots (0-16383)
+# You can use EITHER slot_ranges OR slots (not both)
+
+# Option 1: Slot ranges (recommended for contiguous ranges)
+[[cluster.slot_ranges]]
+start = 0
+end = 5460
+
+# Option 2: Individual slots (useful for non-contiguous assignments)
+# slots = [0, 1, 2, 3, 4, 5]
+
+# Gossip interval in milliseconds (optional, default: 1000)
+gossip_interval_ms = 1000
+
+# ============================================================================
+# Example 3-node cluster setup:
+# ============================================================================
+#
+# Node 1 (this file): slots 0-5460 (5461 slots)
+#   node_id = "node1"
+#   seeds = ["192.168.1.101:7000", "192.168.1.102:7000"]
+#   advertise_addr = "192.168.1.100:6379"
+#   [[cluster.slot_ranges]]
+#   start = 0
+#   end = 5460
+#
+# Node 2: slots 5461-10922 (5462 slots)
+#   node_id = "node2"
+#   seeds = ["192.168.1.100:7000", "192.168.1.102:7000"]
+#   advertise_addr = "192.168.1.101:6379"
+#   [[cluster.slot_ranges]]
+#   start = 5461
+#   end = 10922
+#
+# Node 3: slots 10923-16383 (5461 slots)
+#   node_id = "node3"
+#   seeds = ["192.168.1.100:7000", "192.168.1.101:7000"]
+#   advertise_addr = "192.168.1.102:6379"
+#   [[cluster.slot_ranges]]
+#   start = 10923
+#   end = 16383
+#
+# ============================================================================
+# Notes:
+# ============================================================================
+# 1. Each node needs a unique node_id
+# 2. Seeds should list OTHER cluster members (not itself)
+# 3. Gossip port (UDP) must be open in firewall
+# 4. Redis port (TCP) must be open for client connections
+# 5. Slots can also be assigned dynamically via CLUSTER ADDSLOTS command

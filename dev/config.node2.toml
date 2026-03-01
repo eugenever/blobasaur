@@ -1,0 +1,42 @@
+# Blobasaur Cluster Node 2 Configuration
+
+# Basic server configuration
+data_dir = "/app/data"
+num_shards = 4
+async_write = true
+batch_size = 100
+batch_timeout_ms = 10
+addr = "0.0.0.0:6382"
+
+# Storage compression
+[storage_compression]
+enabled = true
+algorithm = "zstd" # Options: gzip, zstd, lz4, brotli
+level = 3
+
+# Cluster configuration
+[cluster]
+# Enable cluster mode
+enabled = true
+
+# Unique node identifier for this node
+node_id = "node-2"
+
+# List of seed nodes to connect to when joining the cluster
+# These are the gossip addresses of the other nodes (internal Docker network)
+seeds = ["127.0.0.1:7001", "127.0.0.1:7003"]
+
+# Address that Redis clients should use to connect to this node
+# This should be the Redis port, not the gossip port
+advertise_addr = "127.0.0.1:6382"
+
+# Port for gossip protocol communication
+port = 7002
+
+# Hash slot ranges for this node (5461-10922)
+[[cluster.slot_ranges]]
+start = 5461
+end = 10922
+
+# Gossip interval in milliseconds
+gossip_interval_ms = 1000
