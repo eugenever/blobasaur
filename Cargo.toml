@@ -42,3 +42,11 @@ flume = "0.12.0"
 
 [dev-dependencies]
 tempfile = "3.0"
+rand = "0.9.1"
+redis = { git = "https://github.com/redis-rs/redis-rs.git", rev = "530269b", features = [
+    "cluster-async",
+    "tokio-comp",
+    "json",
+    "cache-aio",
+    "connection-manager"
+] }
