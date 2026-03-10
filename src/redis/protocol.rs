@@ -108,6 +108,11 @@ pub enum RedisCommand {
         dry_run: bool,
     },
     Quit,
+    // Streams
+    Xstreams {
+        cmd: Bytes,
+        args: Vec<Bytes>,
+    },
     Unknown(String),
 }
 
@@ -139,6 +144,11 @@ impl RedisCommand {
             RedisCommand::Expire { .. } => "EXPIRE".to_string(),
             RedisCommand::BlobasaurVacuum { .. } => "BLOBASAUR.VACUUM".to_string(),
             RedisCommand::Quit => "QUIT".to_string(),
+            // Streams
+            RedisCommand::Xstreams { cmd, .. } => {
+                let cmd_str = String::from_utf8(cmd.to_vec()).unwrap_or("STREAMS".to_string());
+                cmd_str.to_uppercase()
+            }
             RedisCommand::Unknown(cmd) => cmd.clone(),
         }
     }
@@ -574,6 +584,18 @@ fn parse_command_array(elements: Vec<BytesFrame>) -> Result<RedisCommand, ParseE
         }
         "BLOBASAUR.VACUUM" => parse_blobasaur_vacuum_command(&elements),
         "QUIT" => Ok(RedisCommand::Quit),
+        // Streams
+        cmd if cmd.starts_with('X') => {
+            let args: Vec<Bytes> = elements
+                .iter()
+                .skip(1)
+                .map(|frame| extract_bytes(frame).unwrap())
+                .collect();
+            Ok(RedisCommand::Xstreams {
+                cmd: Bytes::from(cmd.to_string()),
+                args,
+            })
+        }
         _ => Ok(RedisCommand::Unknown(command_name)),
     }
 }

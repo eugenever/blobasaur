@@ -1,17 +1,18 @@
-use crate::cluster::ClusterManager;
-use crate::metrics::Timer;
-use crate::redis::{
-    ParseError, RedisCommand, VacuumCommandMode, VacuumShardTarget, parse_command,
-    parse_resp_with_remaining, serialize_frame,
-};
-use crate::shard_manager::{ShardWriteOperation, VacuumMode, VacuumResult, VacuumStats};
-use crate::{AppState, limiter};
 use bytes::Bytes;
 use redis_protocol::resp2::types::BytesFrame;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
+
+use crate::cluster::ClusterManager;
+use crate::metrics::Timer;
+use crate::redis::{
+    ParseError, RedisCommand, VacuumCommandMode, VacuumShardTarget, parse_command,
+    parse_resp_with_remaining, serialize_frame, stream::WRITE_BUF_SIZE,
+};
+use crate::shard_manager::{ShardWriteOperation, VacuumMode, VacuumResult, VacuumStats};
+use crate::{AppState, limiter};
 
 pub async fn run_redis_server(
     state: Arc<AppState>,
@@ -46,6 +47,7 @@ async fn handle_connection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = Vec::new();
     let mut temp_buffer = vec![0; 4096];
+    let mut write_buf = Vec::with_capacity(WRITE_BUF_SIZE);
 
     loop {
         let n = match stream.read(&mut temp_buffer).await {
@@ -75,7 +77,9 @@ async fn handle_connection(
                     // Parse and handle the command
                     match parse_command(resp_value) {
                         Ok(command) => {
-                            if let Err(e) = handle_redis_command(&mut stream, &state, command).await
+                            if let Err(e) =
+                                handle_redis_command(&mut stream, &mut write_buf, &state, command)
+                                    .await
                             {
                                 tracing::error!("Error handling command: {}", e);
                                 return Err(e);
@@ -157,13 +161,14 @@ struct ShardVacuumDispatchResult {
 
 async fn handle_redis_command(
     stream: &mut TcpStream,
+    write_buf: &mut Vec<u8>,
     state: &Arc<AppState>,
     command: RedisCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let timer = Timer::start();
     let cmd_name = command.name();
 
-    let result = handle_redis_command_inner(stream, state, command).await;
+    let result = handle_redis_command_inner(stream, write_buf, state, command).await;
 
     // Record command metrics
     state.metrics.record_command(&cmd_name, timer.start);
@@ -177,6 +182,7 @@ async fn handle_redis_command(
 
 async fn handle_redis_command_inner(
     stream: &mut TcpStream,
+    write_buf: &mut Vec<u8>,
     state: &Arc<AppState>,
     command: RedisCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -318,6 +324,22 @@ async fn handle_redis_command_inner(
             let response = BytesFrame::SimpleString("OK".into());
             stream.write_all(&serialize_frame(&response)).await?;
             return Err("Client quit".into());
+        }
+        // Streams
+        RedisCommand::Xstreams { cmd, args } => {
+            let store = state.stream_multi_store.db(0);
+            match crate::redis::stream::command::execute(&store, &cmd, &args) {
+                Ok(r) => {
+                    r.write_to_protocol(write_buf, 2);
+                    stream.write_all(write_buf).await?;
+                    write_buf.clear();
+                }
+                Err(e) => {
+                    let r = crate::redis::stream::protocol::RespValue::error(&e.to_string());
+                    let response = r.serialize();
+                    stream.write_all(&response).await?;
+                }
+            }
         }
         RedisCommand::Unknown(cmd) => {
             tracing::warn!("Unknown command: {}", cmd);
@@ -2600,7 +2622,14 @@ mod tests {
         let frame = respond_with(&ctx, |state, stream| {
             Box::pin(async move {
                 let mut stream = stream;
-                let _ = handle_redis_command_inner(&mut stream, &state, RedisCommand::Quit).await;
+                let mut write_buf = vec![];
+                let _ = handle_redis_command_inner(
+                    &mut stream,
+                    &mut write_buf,
+                    &state,
+                    RedisCommand::Quit,
+                )
+                .await;
                 Ok(())
             })
         });
@@ -2616,8 +2645,10 @@ mod tests {
         let frame = respond_with(&ctx, |state, stream| {
             Box::pin(async move {
                 let mut stream = stream;
+                let mut write_buf = vec![];
                 handle_redis_command_inner(
                     &mut stream,
+                    &mut write_buf,
                     &state,
                     RedisCommand::BlobasaurVacuum {
                         target: VacuumShardTarget::All,
@@ -2664,8 +2695,10 @@ mod tests {
         let frame = respond_with(&ctx, |state, stream| {
             Box::pin(async move {
                 let mut stream = stream;
+                let mut write_buf = vec![];
                 handle_redis_command_inner(
                     &mut stream,
+                    &mut write_buf,
                     &state,
                     RedisCommand::BlobasaurVacuum {
                         target: VacuumShardTarget::Shard(99),

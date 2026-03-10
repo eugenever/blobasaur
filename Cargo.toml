@@ -3,7 +3,23 @@ name = "blobasaur"
 version = "0.2.1"
 edition = "2024"
 
+[features]
+default = ["search", "json", "timeseries", "vector", "bloom"]
+# Optional modules (like Redis modules)
+search = [] # RediSearch-like full-text search
+json = [] # RedisJSON-like JSON operations
+timeseries = [] # RedisTimeSeries-like time-series data
+vector = [] # Vector similarity search
+bloom = [
+] # RedisBloom-like probabilistic data structures (BF, CF, TopK, CMS, TDigest)
+
 [dependencies]
+
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-util = { version = "0.7.18", features = ["io"] }
+futures = "0.3.32"
+axum = "0.7"
+
 async-compression = { version = "0.4.9", features = [
     "tokio",
     "gzip",
@@ -12,41 +28,66 @@ async-compression = { version = "0.4.9", features = [
     "lz4",
 ] }
 async-trait = "0.1.88"
+
+config = { version = "0.15.11", features = ["toml"] }
+
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+redis-protocol = { version = "6.0", features = ["std", "resp2", "bytes"] }
+
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
+
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+
 bytes = "1.5"
 chitchat = "0.9"
+
+thiserror = "1.0"
+
+lru = "0.16"
+rayon = "1.10"
+dashmap = "6"
+sonic-rs = "0.5"
+parking_lot = "0.12"
+crossbeam-utils = "0.8.21"
+flume = "0.12.0"
+
+ahash = "0.8.12"
+hashbrown = "0.16.1"
+fastrand = "2"
+roaring = "0.11"
+wide = "1"
 
 chrono = { version = "0.4.38", features = ["serde"] }
 chrono-tz = "0.10.4"
 
-config = { version = "0.15.11", features = ["toml"] }
 gumdrop = "0.8.1"
 crc16 = "0.4"
-futures = "0.3.31"
+itoa = "1"
+memchr = "2"
 miette = { version = "7.6.0", features = ["fancy"] }
 moka = { version = "0.12", features = ["future"] }
 mpchash = "2.0.8"
-redis-protocol = { version = "6.0", features = ["std", "resp2", "bytes"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
-thiserror = "1.0"
-tokio = { version = "1.49.0", features = ["full"] }
-tokio-util = { version = "0.7.18", features = ["io"] }
-tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
-axum = "0.7"
-metrics = "0.23"
-metrics-exporter-prometheus = "0.15"
-
-flume = "0.12.0"
 
 [dev-dependencies]
 tempfile = "3.0"
-rand = "0.9.1"
+sweep-bptree = "0.4.0"
 redis = { git = "https://github.com/redis-rs/redis-rs.git", rev = "530269b", features = [
     "cluster-async",
     "tokio-comp",
     "json",
     "cache-aio",
-    "connection-manager"
+    "connection-manager",
+    "streams"
 ] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = 3

@@ -14,6 +14,7 @@ use tokio::task::JoinSet;
 
 use crate::compression::{self, Compressor};
 use crate::limiter;
+use crate::redis::stream::{self, storage::DEFAULT_DB_COUNT};
 // Import ShardWriteOperation from shard_manager
 use crate::{
     cluster::ClusterManager, config::Cfg, limiter::Limiter, metrics::Metrics,
@@ -52,6 +53,8 @@ pub struct AppState {
 
     /// tracks the number of requests in the LBS (type of counter)
     pub limiter: Limiter,
+
+    pub stream_multi_store: Arc<crate::redis::stream::storage::MultiStore>,
 
     ring: HashRing<ShardNode>,
 }
@@ -232,6 +235,11 @@ impl AppState {
             tracing::error!("send load limiter message: {}", e);
         }
 
+        // Global state - MultiStore with configured databases
+        // Note: Use with_db_count to avoid pre-allocating DashMap capacity
+        let stream_multi_store =
+            Arc::new(stream::storage::MultiStore::with_db_count(DEFAULT_DB_COUNT));
+
         let ring = HashRing::new();
         for i in 0..cfg.num_shards {
             ring.add(ShardNode(i as u64));
@@ -248,6 +256,7 @@ impl AppState {
             compressor,
             metrics,
             limiter: l,
+            stream_multi_store,
             ring,
         })
     }

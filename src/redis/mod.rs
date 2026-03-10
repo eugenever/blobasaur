@@ -1,5 +1,6 @@
 mod integration_tests;
 pub mod protocol;
+pub mod stream;
 
 pub use protocol::{
     ParseError, RedisCommand, VacuumCommandMode, VacuumShardTarget, parse_command,
