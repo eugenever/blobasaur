@@ -6,7 +6,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
 use crate::cluster::ClusterManager;
-// use crate::metrics::Timer;
+use crate::metrics::Timer;
 use crate::redis::stream::protocol::RespValue;
 use crate::redis::{
     ParseError, RedisCommand, VacuumCommandMode, VacuumShardTarget, command, parse_command,
@@ -166,21 +166,17 @@ async fn handle_redis_command(
     state: &Arc<AppState>,
     command: RedisCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    /*
-        let timer = Timer::start();
-        let cmd_name = command.name();
-    */
+    let timer = Timer::start();
+    let cmd_name = command.name();
 
     let result = handle_redis_command_inner(stream, write_buf, state, command).await;
 
-    /*
-        // Record command metrics
-        state.metrics.record_command(&cmd_name, timer.start);
+    // Record command metrics
+    state.metrics.record_command(&cmd_name, timer.start);
 
-        if result.is_err() {
-            state.metrics.record_error("protocol");
-        }
-    */
+    if result.is_err() {
+        state.metrics.record_error("protocol");
+    }
 
     result
 }

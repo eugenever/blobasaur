@@ -108,7 +108,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             let result: Option<StreamReadReply> = con_group_01
                 .xread_options(&[stream_name], &[">"], &options)
-                // .xread_options(&[stream_name], &[">"], &options)
                 .await
                 .expect("Failed to read stream");
 
@@ -146,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Consumer 02
+    // Consumer 03
     let mut con_group_01 = client.get_multiplexed_async_connection().await?;
     let reader_handle3 = tokio::spawn(async move {
         let consumer = "consumer_03";
