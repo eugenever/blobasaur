@@ -71,8 +71,11 @@ pub enum RedisCommand {
         key: String,
         value: Option<u64>,
     },
+    Hello {
+        protover: Option<u64>,
+    },
     Client {
-        message: Option<String>,
+        subcommand: String,
     },
     Ping {
         message: Option<String>,
@@ -131,6 +134,7 @@ impl RedisCommand {
             RedisCommand::HDel { .. } => "HDEL".to_string(),
             RedisCommand::HExists { .. } => "HEXISTS".to_string(),
             RedisCommand::Ping { .. } => "PING".to_string(),
+            RedisCommand::Hello { .. } => "HELLO".to_string(),
             RedisCommand::Client { .. } => "CLIENT".to_string(),
             RedisCommand::Info { .. } => "INFO".to_string(),
             RedisCommand::Command => "COMMAND".to_string(),
@@ -281,14 +285,6 @@ fn parse_command_array(elements: Vec<BytesFrame>) -> Result<RedisCommand, ParseE
             }
             let key = extract_string(&elements[1])?;
             Ok(RedisCommand::Exists { key })
-        }
-        "CLIENT" => {
-            let message = if elements.len() > 1 {
-                Some(extract_string(&elements[1])?)
-            } else {
-                None
-            };
-            Ok(RedisCommand::Client { message })
         }
         "PING" => {
             let message = if elements.len() > 1 {
@@ -583,6 +579,26 @@ fn parse_command_array(elements: Vec<BytesFrame>) -> Result<RedisCommand, ParseE
             Ok(RedisCommand::Expire { key, seconds })
         }
         "BLOBASAUR.VACUUM" => parse_blobasaur_vacuum_command(&elements),
+        "HELLO" => {
+            let protover = if elements.len() > 1 {
+                let ver_str = extract_string(&elements[1])?;
+                let ver = ver_str.parse::<u64>().map_err(|_| {
+                    ParseError::Invalid(format!("Invalid protocol version: {}", ver_str))
+                })?;
+                Some(ver)
+            } else {
+                None
+            };
+            Ok(RedisCommand::Hello { protover })
+        }
+        "CLIENT" => {
+            let subcommand = if elements.len() > 1 {
+                extract_string(&elements[1])?.to_uppercase()
+            } else {
+                String::new()
+            };
+            Ok(RedisCommand::Client { subcommand })
+        }
         "QUIT" => Ok(RedisCommand::Quit),
         // Streams
         cmd if cmd.starts_with('X') => {

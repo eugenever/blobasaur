@@ -1,8 +1,7 @@
 use redis::AsyncCommands;
 use redis::streams::{StreamReadOptions, StreamReadReply};
-use std::time::Duration;
-use tokio::time::sleep;
 
+// cargo run --release --package blobasaur --example streams_write_read
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = redis::Client::open("redis://127.0.0.1/")?;
@@ -17,13 +16,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut con_writer = client.get_multiplexed_async_connection().await?;
     let writer_handle = tokio::spawn(async move {
         println!("WRITER - started");
-        for i in 0..5 {
+        for i in 0..100 {
             let id: String = con_writer
                 .xadd(stream_name, "*", &[("val", &i.to_string())])
                 .await
                 .unwrap();
             println!("WRITER - sent 'val: {i}' with id: {id}");
-            sleep(Duration::from_millis(200)).await;
         }
         println!("WRITER - finished");
     });
@@ -36,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         //       `xread` with just "0" is not supported on some redis versions for streams.
         let mut last_id = "0".to_string();
         loop {
-            let options = StreamReadOptions::default().count(1).block(2000);
+            let options = StreamReadOptions::default().count(1).block(0);
             let result: Option<StreamReadReply> = con_reader
                 .xread_options(&[stream_name], &[&last_id], &options)
                 .await
@@ -49,10 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "READER - read: id: {} - fields: {:?}",
                             stream_id.id, stream_id.map
                         );
-                        println!("READER - SLEEP 800ms");
-                        sleep(Duration::from_millis(800)).await;
-
                         last_id = stream_id.id;
+                        let _i: i64 = con_reader.xdel(stream_name, &[&last_id]).await.unwrap();
                     }
                 }
             } else {
@@ -72,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -- Clean up the stream
     let mut con = client.get_multiplexed_async_connection().await?;
     let count: i32 = con.del(stream_name).await?;
-    println!("Stream '{stream_name}' deleted ({count} key).");
+    println!("Stream '{stream_name}' deleted ({count} key)");
 
     Ok(())
 }

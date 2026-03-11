@@ -6,9 +6,10 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
 use crate::cluster::ClusterManager;
-use crate::metrics::Timer;
+// use crate::metrics::Timer;
+use crate::redis::stream::protocol::RespValue;
 use crate::redis::{
-    ParseError, RedisCommand, VacuumCommandMode, VacuumShardTarget, parse_command,
+    ParseError, RedisCommand, VacuumCommandMode, VacuumShardTarget, command, parse_command,
     parse_resp_with_remaining, serialize_frame, stream::WRITE_BUF_SIZE,
 };
 use crate::shard_manager::{ShardWriteOperation, VacuumMode, VacuumResult, VacuumStats};
@@ -165,17 +166,21 @@ async fn handle_redis_command(
     state: &Arc<AppState>,
     command: RedisCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let timer = Timer::start();
-    let cmd_name = command.name();
+    /*
+        let timer = Timer::start();
+        let cmd_name = command.name();
+    */
 
     let result = handle_redis_command_inner(stream, write_buf, state, command).await;
 
-    // Record command metrics
-    state.metrics.record_command(&cmd_name, timer.start);
+    /*
+        // Record command metrics
+        state.metrics.record_command(&cmd_name, timer.start);
 
-    if result.is_err() {
-        state.metrics.record_error("protocol");
-    }
+        if result.is_err() {
+            state.metrics.record_error("protocol");
+        }
+    */
 
     result
 }
@@ -216,7 +221,24 @@ async fn handle_redis_command_inner(
             handle_set(stream, state, key, value, ttl_seconds).await?;
         }
         RedisCommand::Del { keys } => {
-            handle_del_multiple(stream, state, keys).await?;
+            // Clear stream store
+            let store = state.stream_multi_store.db(0);
+            let args: Vec<Bytes> = keys.clone().into_iter().map(|k| Bytes::from(k)).collect();
+            let use_lazy = false;
+            match command::cmd_del(&store, &args, use_lazy) {
+                Ok(r) => {
+                    if let RespValue::Integer(c) = r
+                        && c > 0
+                    {
+                        r.write_to_protocol(write_buf, 2);
+                        stream.write_all(write_buf).await?;
+                        write_buf.clear();
+                    }
+                }
+                Err(_e) => {}
+            }
+            // Clear SQLx store (blobasaur)
+            handle_del_multiple(stream, state, keys.clone()).await?;
         }
         RedisCommand::Exists { key } => {
             if let Some(ref cluster_manager) = state.cluster_manager {
@@ -230,8 +252,11 @@ async fn handle_redis_command_inner(
             }
             handle_exists(stream, state, key).await?;
         }
-        RedisCommand::Client { message } => {
-            handle_client(stream, message).await?;
+        RedisCommand::Hello { protover } => {
+            handle_hello(stream, protover).await?;
+        }
+        RedisCommand::Client { subcommand } => {
+            handle_client(stream, &subcommand).await?;
         }
         RedisCommand::Ping { message } => {
             handle_ping(stream, message).await?;
@@ -683,10 +708,49 @@ async fn handle_limiter(
     Ok(())
 }
 
+async fn handle_hello(
+    stream: &mut TcpStream,
+    protover: Option<u64>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // RESP2 and and partially RESP3 is supported. If the client requests a different protocol
+    // version, return NOPROTO so it can fall back to RESP2.
+    if let Some(ver) = protover {
+        if ver != 2 && ver != 3 {
+            let response = BytesFrame::Error(
+                format!(
+                    "NOPROTO unsupported protocol version {}, only RESP2 is supported",
+                    ver
+                )
+                .into(),
+            );
+            stream.write_all(&serialize_frame(&response)).await?;
+            return Ok(());
+        }
+    }
+
+    // Return server info as a RESP2 flat array of key-value pairs
+    let response = BytesFrame::Array(vec![
+        BytesFrame::BulkString("server".into()),
+        BytesFrame::BulkString("blobasaur".into()),
+        BytesFrame::BulkString("version".into()),
+        BytesFrame::BulkString(env!("CARGO_PKG_VERSION").into()),
+        BytesFrame::BulkString("proto".into()),
+        BytesFrame::Integer(2),
+        BytesFrame::BulkString("mode".into()),
+        BytesFrame::BulkString("standalone".into()),
+        BytesFrame::BulkString("role".into()),
+        BytesFrame::BulkString("master".into()),
+    ]);
+    stream.write_all(&serialize_frame(&response)).await?;
+    Ok(())
+}
+
 async fn handle_client(
     stream: &mut TcpStream,
-    _message: Option<String>,
+    _subcommand: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Handle CLIENT subcommands (SETNAME, GETNAME, etc.)
+    // Redis clients send CLIENT commands on connect for connection management
     let response = BytesFrame::SimpleString("OK".into());
     stream.write_all(&serialize_frame(&response)).await?;
     Ok(())

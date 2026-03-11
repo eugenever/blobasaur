@@ -75,6 +75,7 @@ moka = { version = "0.12", features = ["future"] }
 mpchash = "2.0.8"
 
 [dev-dependencies]
+rand = "0.10"
 tempfile = "3.0"
 sweep-bptree = "0.4.0"
 redis = { git = "https://github.com/redis-rs/redis-rs.git", rev = "530269b", features = [
@@ -86,8 +87,12 @@ redis = { git = "https://github.com/redis-rs/redis-rs.git", rev = "530269b", fea
     "streams"
 ] }
 
-[profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
-opt-level = 3
+# [profile.release]
+# lto = true
+# codegen-units = 1
+# panic = "abort"
+# opt-level = 3
+
+[profile.profiling]
+inherits = "release"
+debug = true

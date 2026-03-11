@@ -1,4 +1,4 @@
-use rand::{Rng, RngCore};
+use rand::{Rng, RngExt};
 use redis::aio::MultiplexedConnection;
 use redis::{AsyncCommands, AsyncConnectionConfig, RedisError};
 use serde::{Deserialize, Serialize};
